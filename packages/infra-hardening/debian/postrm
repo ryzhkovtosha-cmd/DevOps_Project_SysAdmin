@@ -1,0 +1,32 @@
+#!/bin/sh
+# Сценарий удаления пакета infra-hardening.
+# Требование ТЗ: пакет удаляется без лишних файлов и изменений.
+set -e
+
+SSHD_CONFIG="/etc/ssh/sshd_config"
+
+case "$1" in
+    purge)
+        # При полной очистке возвращаем sshd_config к состоянию до установки,
+        # иначе в системе останется директива Include, которую мы добавили.
+        if [ -f "${SSHD_CONFIG}.pre-infra-hardening" ]; then
+            mv "${SSHD_CONFIG}.pre-infra-hardening" "$SSHD_CONFIG"
+            echo "infra-hardening: $SSHD_CONFIG восстановлен из копии"
+            if [ -d /run/systemd/system ]; then
+                sshd -t 2>/dev/null && deb-systemd-invoke reload ssh.service >/dev/null 2>&1 || true
+            fi
+        fi
+        # Параметры ядра, которые мы меняли, возвращаются к значениям
+        # по умолчанию после перезагрузки; форсировать не нужно.
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

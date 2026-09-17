@@ -1,0 +1,11 @@
+// Приносится пакетом infra-hardening.
+// Автоматическая установка обновлений безопасности: сервер не должен
+// месяцами жить с известной уязвимостью только потому, что до него
+// не дошли руки.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+// Перезагрузку не делаем автоматически: момент выбирает администратор.
+Unattended-Upgrade::Automatic-Reboot "false";

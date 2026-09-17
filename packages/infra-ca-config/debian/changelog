@@ -1,0 +1,19 @@
+infra-ca-config (1.0.1) stable; urgency=medium
+
+  * Исправлено развёртывание центра на easy-rsa 3.0.x (Ubuntu 20.04).
+    Раньше в рабочий каталог линковался только исполняемый файл easyrsa,
+    из-за чего build-ca падал с сообщением
+    "Failed to update .../safessl-easyrsa.cnf": рядом не оказывалось
+    шаблона openssl-easyrsa.cnf и каталога x509-types.
+  * infra-ca-init распознаёт незавершённую PKI, оставшуюся от неудачной
+    попытки, и пересоздаёт её — но только пока не выпущен корневой
+    сертификат.
+  * Переменная EASYRSA задаётся явно во всех вызовах easyrsa.
+
+ -- Infra Team <sysadmin@company.ru>  Wed, 16 Sep 2026 12:01:26 +0000
+
+infra-ca-config (1.0.0) stable; urgency=medium
+
+  * Первый выпуск: команды infra-ca-init и infra-ca-sign, параметры центра.
+
+ -- Infra Team <sysadmin@company.ru>  Sun, 13 Sep 2026 12:01:26 +0000

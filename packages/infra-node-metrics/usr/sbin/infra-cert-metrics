@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Пишет метрики сроков действия сертификатов через textfile-коллектор
+# node_exporter. Запускается по таймеру раз в час.
+#
+# Почему textfile, а не отдельный экспортёр: данные меняются раз в сутки,
+# поднимать ради этого демон с сетевым портом — лишняя сущность и лишняя
+# поверхность атаки. Коллектор просто читает файл с диска.
+
+source /usr/share/infra/common.sh
+
+readonly TEXTFILE_DIR="/var/lib/node_exporter/textfile_collector"
+readonly OUT="${TEXTFILE_DIR}/infra_certs.prom"
+
+require_root
+require_cmd openssl
+
+# Какие файлы проверять. Существующие — обрабатываем, отсутствующие
+# молча пропускаем: на машине CA нет серверного сертификата и наоборот.
+CERT_PATHS=(
+    "/etc/openvpn/server/server.crt:vpn-server"
+    "/etc/openvpn/server/ca.crt:ca-root"
+    "/var/lib/infra-ca/pki/ca.crt:ca-root"
+)
+CRL_PATHS=(
+    "/etc/openvpn/server/crl.pem:openvpn-crl"
+    "/var/lib/infra-ca/pki/crl.pem:ca-crl"
+)
+
+ensure_dir "${TEXTFILE_DIR}" 0755 "root:root"
+
+# Пишем во временный файл и переименовываем: node_exporter может прочитать
+# файл в любой момент, и он не должен застать его недописанным.
+TMP="$(mktemp "${OUT}.XXXXXX")"
+trap 'rm -f "${TMP}"' EXIT INT TERM
+
+{
+    printf '# HELP infra_cert_expiry_timestamp_seconds Дата истечения сертификата, unixtime\n'
+    printf '# TYPE infra_cert_expiry_timestamp_seconds gauge\n'
+} >> "${TMP}"
+
+for entry in "${CERT_PATHS[@]}"; do
+    path="${entry%%:*}"
+    name="${entry##*:}"
+    [[ -f "${path}" ]] || continue
+    end_date="$(openssl x509 -in "${path}" -noout -enddate 2>/dev/null | cut -d= -f2)" || continue
+    [[ -n "${end_date}" ]] || continue
+    ts="$(date -d "${end_date}" +%s 2>/dev/null)" || continue
+    printf 'infra_cert_expiry_timestamp_seconds{cert_name="%s",path="%s"} %s\n' \
+        "${name}" "${path}" "${ts}" >> "${TMP}"
+done
+
+{
+    printf '# HELP infra_crl_expiry_timestamp_seconds Дата истечения списка отзыва, unixtime\n'
+    printf '# TYPE infra_crl_expiry_timestamp_seconds gauge\n'
+} >> "${TMP}"
+
+for entry in "${CRL_PATHS[@]}"; do
+    path="${entry%%:*}"
+    name="${entry##*:}"
+    [[ -f "${path}" ]] || continue
+    next_update="$(openssl crl -in "${path}" -noout -nextupdate 2>/dev/null | cut -d= -f2)" || continue
+    [[ -n "${next_update}" ]] || continue
+    ts="$(date -d "${next_update}" +%s 2>/dev/null)" || continue
+    printf 'infra_crl_expiry_timestamp_seconds{cert_name="%s",path="%s"} %s\n' \
+        "${name}" "${path}" "${ts}" >> "${TMP}"
+done
+
+chmod 644 "${TMP}"
+mv "${TMP}" "${OUT}"
+trap - EXIT INT TERM
+log_ok "Метрики сертификатов записаны: ${OUT}"

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Подписывает присланный запрос на сертификат (CSR).
+#
+# Использование:
+#   sudo infra-ca-sign <server|client> <имя> <путь-к-файлу.req>
+#
+# Примеры:
+#   sudo infra-ca-sign server vpn-server /tmp/vpn-server.req
+#   sudo infra-ca-sign client ivanov     /tmp/ivanov.req
+#
+# Почему именно так, а не «сгенерировать клиенту ключ и сертификат разом»:
+# приватный ключ должен создаваться на машине владельца и никогда её не
+# покидать. Тогда даже полная компрометация сервера CA не раскрывает ключи
+# сотрудников — у центра их попросту нет. Пункт 3 рекомендаций к блоку 2 ТЗ.
+
+# Библиотека и параметры приходят из пакета infra-common
+
+source /usr/share/infra/common.sh
+
+readonly CA_HOME="/var/lib/infra-ca"
+readonly CA_PKI="${CA_HOME}/pki"
+readonly USAGE="$0 <server|client> <имя> <файл.req>"
+
+require_root
+require_args "$#" 3 "${USAGE}"
+
+REQ_TYPE="$1"
+REQ_NAME="$2"
+REQ_FILE="$3"
+
+# --- Проверки граничных случаев --------------------------------------------
+
+case "${REQ_TYPE}" in
+    server|client) ;;
+    *) die "${EX_USAGE}" "Тип должен быть server или client, получено: ${REQ_TYPE}" ;;
+esac
+
+# Имя уходит в пути к файлам, поэтому фильтруем строго.
+validate_name "${REQ_NAME}"
+
+[[ -f "${REQ_FILE}" ]] || die "${EX_DATAERR}" "Файл запроса не найден: ${REQ_FILE}"
+[[ -d "${CA_PKI}" ]]   || die "${EX_UNAVAILABLE}" \
+    "PKI не инициализирована. Сначала выполните setup-ca.sh"
+
+# Проверяем, что это действительно CSR, а не случайный файл. Без проверки
+# easyrsa упал бы с невнятной ошибкой openssl где-то в середине.
+if ! openssl req -in "${REQ_FILE}" -noout -verify >/dev/null 2>&1; then
+    die "${EX_DATAERR}" "Файл ${REQ_FILE} не является корректным запросом на сертификат"
+fi
+
+REQ_CN="$(openssl req -in "${REQ_FILE}" -noout -subject 2>/dev/null \
+          | sed -n 's/.*CN\s*=\s*\([^,/]*\).*/\1/p' | xargs)"
+log_info "В запросе указан Common Name: ${REQ_CN}"
+if [[ "${REQ_CN}" != "${REQ_NAME}" ]]; then
+    log_warn "CN в запросе (${REQ_CN}) не совпадает с именем (${REQ_NAME})."
+    confirm "Продолжить подписание?" || die "${EX_DATAERR}" "Отменено оператором"
+fi
+
+# Повторная выдача на то же имя — типичная ошибка, которая приводит к
+# конфликту в базе выпущенных сертификатов. Предупреждаем явно.
+if [[ -f "${CA_PKI}/issued/${REQ_NAME}.crt" ]]; then
+    log_warn "Сертификат для ${REQ_NAME} уже выпущен."
+    log_warn "Повторная выдача требует сначала отозвать старый:"
+    log_warn "  cd ${CA_HOME} && EASYRSA_PKI=${CA_PKI} ./easyrsa revoke ${REQ_NAME}"
+    die "${EX_DATAERR}" "Отказ во избежание конфликта в базе сертификатов"
+fi
+
+# --- Импорт и подпись -------------------------------------------------------
+
+# Easy-RSA отказывается импортировать запрос, если файл с таким именем уже
+# лежит в pki/reqs. Убираем оставшийся от неудачной попытки.
+if [[ -f "${CA_PKI}/reqs/${REQ_NAME}.req" ]]; then
+    log_info "Удаляю остаток прежнего импорта: ${REQ_NAME}.req"
+    rm -f "${CA_PKI}/reqs/${REQ_NAME}.req"
+fi
+
+log_info "Импортирую запрос ${REQ_FILE} как ${REQ_NAME}"
+( cd "${CA_HOME}" && EASYRSA="${CA_HOME}" EASYRSA_PKI="${CA_PKI}" \
+    ./easyrsa --batch import-req "${REQ_FILE}" "${REQ_NAME}" >/dev/null )
+
+log_info "Подписываю как ${REQ_TYPE}. Потребуется парольная фраза CA."
+# --batch отвечает «yes» на вопрос о доверии источнику. Ответственность за
+# проверку подлинности запроса лежит на операторе: сверьте отпечаток запроса
+# с отправителем по независимому каналу перед запуском скрипта.
+( cd "${CA_HOME}" && EASYRSA="${CA_HOME}" EASYRSA_PKI="${CA_PKI}" \
+    ./easyrsa --batch sign-req "${REQ_TYPE}" "${REQ_NAME}" )
+
+ISSUED="${CA_PKI}/issued/${REQ_NAME}.crt"
+[[ -f "${ISSUED}" ]] || die "${EX_SOFTWARE}" "Подпись не удалась: ${ISSUED} не создан"
+
+OUT_DIR="${CA_HOME}/outgoing/${REQ_NAME}"
+ensure_dir "${OUT_DIR}" 0755 "root:root"
+cp "${ISSUED}"          "${OUT_DIR}/${REQ_NAME}.crt"
+cp "${CA_PKI}/ca.crt"   "${OUT_DIR}/ca.crt"
+chmod 644 "${OUT_DIR}"/*
+
+log_ok "Сертификат выпущен: ${OUT_DIR}/${REQ_NAME}.crt"
+printf '\n'
+openssl x509 -in "${ISSUED}" -noout -subject -dates -ext extendedKeyUsage 2>/dev/null \
+    || openssl x509 -in "${ISSUED}" -noout -subject -dates
+printf '\nЗаберите файлы на машину получателя:\n'
+printf '  scp -r %s@<ca-ip>:%s ./\n' "${SUDO_USER:-yc-user}" "${OUT_DIR}"

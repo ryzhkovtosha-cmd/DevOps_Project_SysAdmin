@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+
+TEXTFILE_DIR="/var/lib/node_exporter/textfile_collector"
+
+case "$1" in
+    configure)
+        mkdir -p "$TEXTFILE_DIR"
+        chmod 0755 "$TEXTFILE_DIR"
+
+        # Первый сбор сразу, не дожидаясь срабатывания таймера: иначе
+        # до часа метрик не будет, и алерты по сертификатам молчат.
+        # Вызов по имени, а не по полному пути: так команда найдётся
+        # и при нестандартном префиксе установки.
+        if command -v infra-cert-metrics >/dev/null 2>&1; then
+            infra-cert-metrics >/dev/null 2>&1 || true
+        fi
+
+        if [ -d /run/systemd/system ]; then
+            # daemon-reload обязателен: без него systemd не увидит
+            # принесённый drop-in и запустит службу со старыми параметрами.
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            deb-systemd-invoke restart prometheus-node-exporter.service >/dev/null 2>&1 || true
+        fi
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

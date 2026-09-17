@@ -1,0 +1,2 @@
+usr/sbin/infra-cert-metrics usr/sbin/
+usr/lib/systemd/system/prometheus-node-exporter.service.d/10-infra-node-metrics.conf usr/lib/systemd/system/prometheus-node-exporter.service.d/

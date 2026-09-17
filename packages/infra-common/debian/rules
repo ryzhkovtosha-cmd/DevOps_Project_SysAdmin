@@ -1,0 +1,6 @@
+#!/usr/bin/make -f
+# Сборка через debhelper: dh сам вызовет dh_install, dh_installdeb,
+# dh_installsystemd, dh_gencontrol, dh_md5sums и dh_builddeb.
+
+%:
+	dh $@

@@ -1,0 +1,11 @@
+[Unit]
+Description=Сбор метрик о сроках действия сертификатов
+Documentation=file:///usr/share/doc/infra-node-metrics/README
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/infra-cert-metrics
+# Ограничения: скрипту нужно только читать сертификаты и писать один файл.
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

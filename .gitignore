@@ -1,0 +1,29 @@
+# --- Секреты. Сюда не должно попасть ничего из этого списка ---
+*.key
+*.ovpn
+*-bundle.tar.gz
+passphrase
+smtp-password
+pki/
+*.p12
+id_ed25519*
+id_rsa*
+
+# --- Мусор сборки deb-пакетов ---
+packages/*/debian/files
+packages/*/debian/*.substvars
+packages/*/debian/debhelper-build-stamp
+packages/*/debian/infra-*/
+packages/*/debian/*.debhelper*
+*.buildinfo
+*.changes
+
+# --- Локальные настройки ---
+# project.env с реальным ADMIN_CIDR держите локально: публиковать свой
+# домашний адрес в открытом репозитории незачем.
+scripts/project.env.local
+
+# --- Прочее ---
+*.bak-*
+*.swp
+.DS_Store

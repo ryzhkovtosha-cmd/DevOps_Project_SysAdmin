@@ -1,0 +1,28 @@
+Source: infra-node-metrics
+Section: net
+Priority: optional
+Maintainer: Infra Team <sysadmin@company.ru>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: infra-node-metrics
+Architecture: all
+Depends: ${misc:Depends}, infra-common (>= 1.0.0),
+ prometheus-node-exporter, openssl
+Description: Сбор собственных метрик инфраструктуры на каждой машине
+ Ставится на все серверы инфраструктуры. Настраивает node-exporter и
+ добавляет метрики, которых в нём нет по умолчанию.
+ .
+ Приносит:
+ .
+  * дополнение к службе node-exporter в виде drop-in для systemd: включён
+    textfile-коллектор и сбор состояния юнитов. Именно drop-in, а не
+    подмена /etc/default/prometheus-node-exporter: тот файл принадлежит
+    другому пакету, и попытка принести его вторым пакетом ломает установку;
+  * команду infra-cert-metrics и таймер systemd к ней: раз в час пишет
+    сроки действия сертификатов и списка отзыва в виде метрик.
+ .
+ Истёкший сертификат — авария, которая происходит на ровном месте: ничего
+ не менялось, а сервис перестал работать. Метрика срока действия делает
+ эту проблему видимой за месяц до наступления.

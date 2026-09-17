@@ -1,0 +1,3 @@
+usr/sbin/infra-ca-init usr/sbin/
+usr/sbin/infra-ca-sign usr/sbin/
+etc/infra-ca/infra-ca.conf etc/infra-ca/

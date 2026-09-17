@@ -1,0 +1,36 @@
+.TH INFRA-CERT-METRICS 8 "2026-09-15" "infra-node-metrics 1.0.0" "Администрирование инфраструктуры"
+.SH ИМЯ
+infra-cert-metrics \- экспортировать сроки действия сертификатов в Prometheus
+.SH СИНТАКСИС
+.B infra-cert-metrics
+.SH ОПИСАНИЕ
+Записывает сроки действия сертификатов и списка отзыва в файл, который
+читает textfile\-коллектор
+.BR node_exporter .
+Запускается по таймеру
+.B infra-cert-metrics.timer
+раз в час.
+.PP
+Истёкший сертификат — авария, возникающая на ровном месте: конфигурация не
+менялась, а сервис перестал работать. Метрика делает проблему видимой за
+месяц до наступления.
+.PP
+Textfile вместо отдельного экспортёра выбран намеренно: данные меняются
+раз в сутки, и поднимать ради них демон с сетевым портом значило бы
+добавить лишнюю поверхность атаки.
+.SH МЕТРИКИ
+.TP
+.B infra_cert_expiry_timestamp_seconds
+Дата истечения сертификата, unixtime. Метки:
+.IR cert_name ", " path .
+.TP
+.B infra_crl_expiry_timestamp_seconds
+Дата истечения списка отзыва, unixtime.
+.SH ФАЙЛЫ
+.TP
+.I /var/lib/node_exporter/textfile_collector/infra_certs.prom
+Результат работы. Пишется во временный файл и переименовывается, чтобы
+node_exporter не прочитал его недописанным.
+.SH СМОТРИ ТАКЖЕ
+.BR prometheus-node-exporter (1),
+.BR infra-ca-init (8)

@@ -1,0 +1,104 @@
+#!/bin/sh
+# Установочный сценарий пакета infra-hardening.
+# Согласно Debian Policy: набор действий строго по значению $1,
+# завершение при первой же ошибке, идемпотентность при переустановке.
+set -e
+
+SSHD_CONFIG="/etc/ssh/sshd_config"
+DROPIN_LINE="Include /etc/ssh/sshd_config.d/*.conf"
+
+# В Ubuntu 20.04 штатный sshd_config не содержит директиву Include, поэтому
+# наш файл в sshd_config.d просто не читался бы. Добавляем директиву первой
+# строкой: в sshd_config выигрывает первое встреченное значение параметра,
+# значит настройки из drop-in перекроют идущие ниже умолчания.
+ensure_include() {
+    if [ ! -f "$SSHD_CONFIG" ]; then
+        echo "infra-hardening: $SSHD_CONFIG не найден, пропускаю" >&2
+        return 0
+    fi
+    if grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/' "$SSHD_CONFIG"; then
+        return 0
+    fi
+    cp -a "$SSHD_CONFIG" "${SSHD_CONFIG}.pre-infra-hardening"
+    printf '%s\n\n' "$DROPIN_LINE" > "${SSHD_CONFIG}.new"
+    cat "$SSHD_CONFIG" >> "${SSHD_CONFIG}.new"
+    mv "${SSHD_CONFIG}.new" "$SSHD_CONFIG"
+    echo "infra-hardening: в $SSHD_CONFIG добавлена директива Include"
+}
+
+# Предохранитель. Пакет отключает вход по паролю. Если при этом ни у одного
+# пользователя нет авторизованного ключа, администратор потеряет доступ
+# к машине навсегда. В такой ситуации откатываем только этот параметр,
+# оставляя остальные настройки в силе.
+check_authorized_keys() {
+    found=0
+    for home in /root /home/*; do
+        [ -d "$home" ] || continue
+        if [ -s "$home/.ssh/authorized_keys" ]; then
+            found=1
+            break
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "infra-hardening: ВНИМАНИЕ — не найдено ни одного authorized_keys." >&2
+        echo "infra-hardening: парольная аутентификация оставлена включённой," >&2
+        echo "infra-hardening: чтобы не потерять доступ к машине." >&2
+        sed -i 's/^PasswordAuthentication no/#PasswordAuthentication no  # оставлено: нет ключей/' \
+            /etc/ssh/sshd_config.d/60-infra-hardening.conf
+    fi
+}
+
+reload_sshd() {
+    # Проверка синтаксиса до перезапуска: перезапуск со сломанным конфигом
+    # оставил бы машину без SSH.
+    if ! sshd -t 2>/dev/null; then
+        echo "infra-hardening: конфигурация SSH не проходит проверку, перезапуск отменён" >&2
+        sshd -t || true
+        return 0
+    fi
+    if [ -d /run/systemd/system ]; then
+        deb-systemd-invoke reload ssh.service >/dev/null 2>&1 \
+            || deb-systemd-invoke restart ssh.service >/dev/null 2>&1 \
+            || true
+    fi
+}
+
+apply_sysctl() {
+    if [ -d /run/systemd/system ]; then
+        sysctl --quiet --system >/dev/null 2>&1 || true
+    fi
+}
+
+setup_firewall() {
+    command -v firewall-cmd >/dev/null 2>&1 || return 0
+    [ -d /run/systemd/system ] || return 0
+    # deb-systemd-helper/deb-systemd-invoke вместо systemctl: они уважают
+    # политику запуска служб (policy-rc.d) и корректно работают в chroot
+    # при сборке образов. Прямой вызов systemctl этого не умеет.
+    deb-systemd-helper enable firewalld.service >/dev/null 2>&1 || true
+    deb-systemd-invoke start firewalld.service >/dev/null 2>&1 || true
+    # SSH разрешаем ПЕРВЫМ делом — до любых запрещающих правил.
+    firewall-cmd --permanent --add-service=ssh >/dev/null 2>&1 || true
+    firewall-cmd --reload >/dev/null 2>&1 || true
+}
+
+case "$1" in
+    configure)
+        ensure_include
+        check_authorized_keys
+        apply_sysctl
+        setup_firewall
+        reload_sshd
+        echo "infra-hardening: базовая защита применена"
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,23 @@
+Source: infra-common
+Section: admin
+Priority: optional
+Maintainer: Infra Team <sysadmin@company.ru>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: infra-common
+Architecture: all
+Depends: ${misc:Depends}, bash (>= 5.0)
+Description: Общая библиотека и параметры инфраструктуры VPN-сервиса
+ Базовый пакет, от которого зависят остальные пакеты инфраструктуры.
+ Приносит на машину две вещи:
+ .
+  * /usr/share/infra/common.sh — библиотеку функций для служебных скриптов:
+    логирование, аварийный выход с кодом по sysexits.h, идемпотентные
+    помощники для правки конфигурационных файлов;
+  * /etc/infra/project.env — параметры инфраструктуры: имена машин,
+    внутренние адреса, номера портов, реквизиты организации.
+ .
+ Вынесение этих файлов в отдельный пакет избавляет от копирования одного
+ и того же кода на четыре сервера и даёт единую точку правки адресации.

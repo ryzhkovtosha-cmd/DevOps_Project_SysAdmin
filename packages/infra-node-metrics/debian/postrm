@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Метрики, которые писали мы. Чужие файлы в этом каталоге
+        # (от других экспортёров) не трогаем.
+        rm -f /var/lib/node_exporter/textfile_collector/infra_certs.prom
+        rmdir --ignore-fail-on-non-empty /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+        rmdir --ignore-fail-on-non-empty /var/lib/node_exporter 2>/dev/null || true
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

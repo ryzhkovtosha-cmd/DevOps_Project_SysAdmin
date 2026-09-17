@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Пустые служебные каталоги убираем. Саму PKI НЕ удаляем никогда:
+        # вместе с ней пропал бы приватный ключ центра, а значит и
+        # возможность отозвать или перевыпустить хоть один сертификат.
+        rmdir --ignore-fail-on-non-empty /var/lib/infra-ca/incoming 2>/dev/null || true
+        rmdir --ignore-fail-on-non-empty /var/lib/infra-ca/outgoing 2>/dev/null || true
+        rmdir --ignore-fail-on-non-empty /var/lib/infra-ca 2>/dev/null || true
+        if [ -d /var/lib/infra-ca/pki ]; then
+            echo "infra-ca-config: каталог /var/lib/infra-ca/pki сохранён." >&2
+            echo "infra-ca-config: в нём приватный ключ центра. Удаляйте вручную и осознанно." >&2
+        fi
+        rmdir --ignore-fail-on-non-empty /etc/infra-ca 2>/dev/null || true
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

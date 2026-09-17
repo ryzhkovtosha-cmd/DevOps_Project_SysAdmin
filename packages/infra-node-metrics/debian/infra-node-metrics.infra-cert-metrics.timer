@@ -1,0 +1,12 @@
+[Unit]
+Description=Ежечасный сбор метрик о сертификатах
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+# Разброс в пять минут, чтобы четыре машины не полезли считать одновременно.
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

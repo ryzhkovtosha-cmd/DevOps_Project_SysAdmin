@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+CA_HOME="/var/lib/infra-ca"
+
+case "$1" in
+    configure)
+        # Каталог с приватным ключом центра создаём с правами 0700 сразу:
+        # если создать его открытым и закрыть потом, между этими моментами
+        # существует окно, в которое ключ доступен на чтение.
+        mkdir -p "$CA_HOME"
+        chmod 0700 "$CA_HOME"
+        chown root:root "$CA_HOME"
+        mkdir -p "$CA_HOME/incoming"
+        chmod 0700 "$CA_HOME/incoming"
+        mkdir -p "$CA_HOME/outgoing"
+        chmod 0755 "$CA_HOME/outgoing"
+
+        echo "infra-ca-config установлен."
+        echo "Следующий шаг — развернуть центр: sudo infra-ca-init"
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

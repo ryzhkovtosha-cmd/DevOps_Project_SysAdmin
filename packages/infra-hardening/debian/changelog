@@ -1,0 +1,5 @@
+infra-hardening (1.0.0) stable; urgency=medium
+
+  * Первый выпуск: настройки SSH, параметры ядра, автообновления.
+
+ -- Infra Team <sysadmin@company.ru>  Tue, 15 Sep 2026 11:52:08 +0000
