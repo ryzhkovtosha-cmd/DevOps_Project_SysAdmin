@@ -158,13 +158,10 @@ $ shellcheck -x -S warning scripts/*/*.sh packages/*/usr/sbin/*
 | Конфигурация OpenVPN | [`packages/infra-vpn-config/`](../../packages/infra-vpn-config/) |
 | Собранные пакеты | [`dist/`](../../dist/) |
 
-**2. Скриншот успешного подключения клиента** — в [`screenshots/`](screenshots/), журнал в `vpn-client.log`.
+**2. Скриншот успешного подключения клиента** — в [`screenshots/`](screenshots/).
 
 **3. Скриншот смены IP-адреса** — в [`screenshots/`](screenshots/).
 
-**4. Отчёт с сервера** — `vpn-report.txt`, собран скриптом [`collect-evidence.sh`](collect-evidence.sh).
-
-Пошаговый порядок работ — в [`RUNBOOK.md`](RUNBOOK.md).
 
 ---
 
