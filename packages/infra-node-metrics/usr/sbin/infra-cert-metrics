@@ -22,7 +22,7 @@ CERT_PATHS=(
     "/var/lib/infra-ca/pki/ca.crt:ca-root"
 )
 CRL_PATHS=(
-    "/etc/openvpn/server/crl.pem:openvpn-crl"
+    "/etc/openvpn/crl.pem:openvpn-crl"
     "/var/lib/infra-ca/pki/crl.pem:ca-crl"
 )
 

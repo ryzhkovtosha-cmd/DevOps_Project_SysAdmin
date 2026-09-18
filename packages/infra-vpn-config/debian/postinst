@@ -1,0 +1,49 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Каталог журналов: OpenVPN открывает файл журнала ДО понижения
+        # привилегий до nobody, поэтому владельцем остаётся root.
+        mkdir -p /var/log/openvpn
+        chmod 0755 /var/log/openvpn
+
+        # Каталог комплектов для сотрудников — закрытый: внутри лежит
+        # общий ключ tls-crypt.
+        mkdir -p /var/lib/infra-vpn/clients
+        chmod 0700 /var/lib/infra-vpn
+        chmod 0700 /var/lib/infra-vpn/clients
+
+        # Каталог с ключами сервера.
+        mkdir -p /etc/openvpn/server
+        chmod 0700 /etc/openvpn/server
+
+        # Применяем параметр ядра из принесённого файла.
+        if [ -d /run/systemd/system ]; then
+            sysctl --quiet --system >/dev/null 2>&1 || true
+        fi
+
+        # Регистрируем службу в firewalld, но НЕ открываем порт: решение
+        # об открытии принимает setup-vpn-server.sh, когда сервис реально
+        # готов принимать подключения.
+        if command -v firewall-cmd >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+            firewall-cmd --reload >/dev/null 2>&1 || true
+        fi
+
+        # Службу намеренно НЕ запускаем: сертификатов ещё нет, OpenVPN
+        # упал бы с ошибкой и оставил юнит в состоянии failed.
+        echo "infra-vpn-config установлен."
+        echo "Сертификаты ещё не выпущены, поэтому служба не запущена."
+        echo "Дальше: sudo ./request-server-cert.sh, затем sudo ./setup-vpn-server.sh"
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

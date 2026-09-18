@@ -180,10 +180,22 @@ verify_vpn() {
     fi
 
     local f
-    for f in ca.crt server.crt server.key ta.key crl.pem; do
+    for f in ca.crt server.crt server.key ta.key; do
         if [[ -f "/etc/openvpn/server/${f}" ]]; then ok "Файл ${f} на месте"
         else fail "Отсутствует /etc/openvpn/server/${f}"; fi
     done
+
+    # Список отзыва лежит отдельно и обязан быть читаем после понижения
+    # привилегий — иначе сервер откажет всем клиентам.
+    if [[ -f /etc/openvpn/crl.pem ]]; then
+        if sudo -u nobody test -r /etc/openvpn/crl.pem 2>/dev/null; then
+            ok "Список отзыва на месте и читается непривилегированным процессом"
+        else
+            fail "Список отзыва недоступен пользователю nobody — клиенты получат отказ"
+        fi
+    else
+        fail "Отсутствует /etc/openvpn/crl.pem"
+    fi
 
     if [[ -f /etc/openvpn/server/server.crt ]]; then
         if openssl verify -CAfile /etc/openvpn/server/ca.crt \
@@ -207,7 +219,7 @@ verify_mon() {
     check "Alertmanager работает" systemctl is-active --quiet prometheus-alertmanager
 
     if command -v promtool >/dev/null 2>&1; then
-        check "Конфигурация Prometheus корректна" promtool check config /etc/prometheus/prometheus.yml
+        check "Конфигурация Prometheus корректна" promtool check config /etc/prometheus/infra-prometheus.yml
         local rules_bad=0 f
         for f in /etc/prometheus/rules/*.yml; do
             promtool check rules "${f}" >/dev/null 2>&1 || rules_bad=1

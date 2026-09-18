@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: infra
+Source: внутренняя разработка
+
+Files: *
+Copyright: 2026 Our Company Name
+License: MIT
+ Разрешается свободное использование, копирование и изменение в пределах
+ организации при сохранении уведомления об авторских правах.

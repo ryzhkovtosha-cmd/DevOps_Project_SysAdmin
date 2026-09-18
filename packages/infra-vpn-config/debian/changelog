@@ -1,0 +1,23 @@
+infra-vpn-config (1.0.2) stable; urgency=medium
+
+  * Из шаблона клиентской конфигурации убран mute: он подавлял важные
+    строки журнала, включая "Initialization Sequence Completed".
+
+ -- Infra Team <sysadmin@company.ru>  Fri, 18 Sep 2026 09:14:02 +0000
+
+infra-vpn-config (1.0.1) stable; urgency=medium
+
+  * Список отзыва перенесён из /etc/openvpn/server в /etc/openvpn:
+    OpenVPN перечитывает его при каждом подключении уже от имени nobody,
+    а каталог server закрыт правами 0700 root:root.
+  * Убрана директива push "block-outside-dns": она существует только в
+    клиенте под Windows и роняет клиентов на Linux и macOS.
+
+ -- Infra Team <sysadmin@company.ru>  Thu, 17 Sep 2026 09:14:02 +0000
+
+infra-vpn-config (1.0.0) stable; urgency=medium
+
+  * Первый выпуск: конфигурация OpenVPN, шаблон клиента,
+    команда infra-vpn-make-client, описание службы для firewalld.
+
+ -- Infra Team <sysadmin@company.ru>  Tue, 15 Sep 2026 09:14:02 +0000

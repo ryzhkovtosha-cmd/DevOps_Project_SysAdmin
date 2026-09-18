@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove|deconfigure)
+        # Останавливаем службу до того, как из-под неё уедет конфигурация.
+        if [ -d /run/systemd/system ]; then
+            deb-systemd-invoke stop 'openvpn-server@server.service' >/dev/null 2>&1 || true
+        fi
+        ;;
+    upgrade|failed-upgrade)
+        # При обновлении службу не трогаем: конфигурация совместима,
+        # рвать подключения сотрудников без необходимости не нужно.
+        ;;
+    *)
+        echo "prerm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

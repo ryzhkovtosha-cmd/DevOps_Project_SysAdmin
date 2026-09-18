@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Убираем то, что создали сами. Ключи и сертификаты сервера
+        # НЕ удаляем: их восстановление требует повторного похода в
+        # удостоверяющий центр, а случайный apt purge не должен этого стоить.
+        if command -v firewall-cmd >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+            firewall-cmd --permanent --remove-port=1194/udp >/dev/null 2>&1 || true
+            firewall-cmd --permanent --remove-masquerade >/dev/null 2>&1 || true
+            firewall-cmd --reload >/dev/null 2>&1 || true
+        fi
+        rm -rf /var/lib/infra-vpn/clients
+        rmdir --ignore-fail-on-non-empty /var/lib/infra-vpn 2>/dev/null || true
+        rmdir --ignore-fail-on-non-empty /etc/infra-vpn 2>/dev/null || true
+        if [ -f /etc/openvpn/server/server.key ]; then
+            echo "infra-vpn-config: ключи сервера в /etc/openvpn/server сохранены." >&2
+            echo "infra-vpn-config: удаляйте вручную, если машина выводится из эксплуатации." >&2
+        fi
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Собирает комплект файлов для сотрудника.
+#
+# Использование:
+#   sudo infra-vpn-make-client <имя> <путь-к-подписанному.crt>
+#
+# Пример:
+#   sudo infra-vpn-make-client ivanov /tmp/ivanov.crt
+#
+# В комплект входят: подписанный сертификат сотрудника, сертификат
+# удостоверяющего центра, ключ tls-crypt и шаблон конфигурации.
+#
+# Приватного ключа в комплекте НЕТ и быть не может: он всё это время лежал
+# на машине сотрудника и сюда не попадал. Итоговый .ovpn сотрудник соберёт
+# у себя скриптом assemble-config.sh. Благодаря этому архив можно передать
+# обычной почтой: он бесполезен без ключа получателя.
+
+# Библиотека и параметры приходят из пакета infra-common
+source /usr/share/infra/common.sh
+source /etc/infra/project.env
+
+readonly OVPN_DIR="/etc/openvpn/server"
+readonly CLIENTS_DIR="/var/lib/infra-vpn/clients"
+readonly TEMPLATE="/etc/infra-vpn/base.conf.template"
+readonly USAGE="infra-vpn-make-client <имя> <подписанный.crt>"
+
+require_root
+require_args "$#" 2 "${USAGE}"
+require_cmd openssl tar
+
+CLIENT_NAME="$1"
+CLIENT_CRT="$2"
+
+validate_name "${CLIENT_NAME}"
+[[ -f "${CLIENT_CRT}" ]] || die "${EX_DATAERR}" "Не найден сертификат: ${CLIENT_CRT}"
+[[ -f "${TEMPLATE}" ]]   || die "${EX_UNAVAILABLE}" "Не найден шаблон ${TEMPLATE}"
+[[ -f "${OVPN_DIR}/ca.crt" ]] || die "${EX_UNAVAILABLE}" \
+    "Не найден ${OVPN_DIR}/ca.crt. Сервер ещё не настроен."
+[[ -f "${OVPN_DIR}/ta.key" ]] || die "${EX_UNAVAILABLE}" \
+    "Не найден ${OVPN_DIR}/ta.key. Сервер ещё не настроен."
+
+# Сертификат обязан быть подписан нашим центром. Иначе сотрудник получит
+# комплект, с которым сервер его не пустит, и разбираться придётся долго.
+log_info "Проверяю цепочку доверия"
+openssl verify -CAfile "${OVPN_DIR}/ca.crt" "${CLIENT_CRT}" >/dev/null 2>&1 \
+    || die "${EX_DATAERR}" "Сертификат не подписан нашим удостоверяющим центром"
+
+# Клиентский сертификат не должен быть серверным: иначе сотрудник смог бы
+# поднять подставной VPN-сервер, которому доверяют остальные сотрудники.
+if openssl x509 -in "${CLIENT_CRT}" -noout -purpose 2>/dev/null | grep -q "SSL server : Yes"; then
+    die "${EX_DATAERR}" "Это серверный сертификат. Подписывайте клиентские как: infra-ca-sign client ${CLIENT_NAME} ..."
+fi
+
+# Срок действия. Выдавать комплект, который протухнет через неделю, незачем.
+if ! openssl x509 -in "${CLIENT_CRT}" -noout -checkend 604800 >/dev/null 2>&1; then
+    log_warn "Сертификат истекает менее чем через 7 дней"
+    confirm "Всё равно собрать комплект?" || die "${EX_DATAERR}" "Отменено оператором"
+fi
+
+# Публичный адрес сервера — то, что попадёт в директиву remote. Берём из
+# облачных метаданных, туда Yandex Cloud кладёт назначенный ВМ адрес.
+detect_public_ip() {
+    local ip
+    ip="$(curl -s --max-time 3 \
+        -H "Metadata-Flavor: Google" \
+        "http://169.254.169.254/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip" \
+        2>/dev/null || true)"
+    if [[ -z "${ip}" ]]; then
+        ip="$(curl -s --max-time 5 ifconfig.me 2>/dev/null || true)"
+    fi
+    printf '%s' "${ip}"
+}
+
+PUBLIC_IP="$(detect_public_ip)"
+if [[ ! "${PUBLIC_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    die "${EX_UNAVAILABLE}" \
+        "Не удалось определить публичный адрес сервера. Задайте вручную: VPN_REMOTE=1.2.3.4 infra-vpn-make-client ..."
+fi
+# Переменная окружения имеет приоритет — например, если используется
+# доменное имя вместо адреса.
+PUBLIC_IP="${VPN_REMOTE:-${PUBLIC_IP}}"
+log_info "Адрес сервера для клиента: ${PUBLIC_IP}"
+
+ensure_dir "${CLIENTS_DIR}" 0700 "root:root"
+WORK="${CLIENTS_DIR}/${CLIENT_NAME}"
+rm -rf "${WORK}"
+ensure_dir "${WORK}" 0700 "root:root"
+
+sed "s|@@REMOTE@@|${PUBLIC_IP}|g" "${TEMPLATE}" > "${WORK}/base.conf"
+install -m 0644 "${CLIENT_CRT}"        "${WORK}/${CLIENT_NAME}.crt"
+install -m 0644 "${OVPN_DIR}/ca.crt"   "${WORK}/ca.crt"
+install -m 0640 "${OVPN_DIR}/ta.key"   "${WORK}/ta.key"
+
+BUNDLE="${CLIENTS_DIR}/${CLIENT_NAME}-bundle.tar.gz"
+tar -czf "${BUNDLE}" -C "${CLIENTS_DIR}" "${CLIENT_NAME}"
+chmod 600 "${BUNDLE}"
+
+log_ok "Комплект собран: ${BUNDLE}"
+cat <<INFO
+
+Передайте сотруднику файл ${CLIENT_NAME}-bundle.tar.gz:
+  scp ${BUNDLE} <ваша-машина>:~/
+
+Ключ tls-crypt внутри — общий секрет инфраструктуры. Архив не стоит
+выкладывать в публичный доступ, хотя без приватного ключа получателя
+подключиться по нему нельзя.
+
+Сотрудник у себя выполняет:
+  ./assemble-config.sh ${CLIENT_NAME}-bundle.tar.gz
+
+INFO
