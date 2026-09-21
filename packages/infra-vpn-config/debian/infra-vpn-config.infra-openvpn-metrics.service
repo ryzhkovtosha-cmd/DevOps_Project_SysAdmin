@@ -1,0 +1,11 @@
+[Unit]
+Description=Сбор метрик OpenVPN для Prometheus
+Documentation=man:infra-openvpn-metrics(8)
+After=openvpn-server@server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/infra-openvpn-metrics
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

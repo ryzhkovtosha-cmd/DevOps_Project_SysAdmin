@@ -1,0 +1,35 @@
+Source: infra-monitoring-config
+Section: net
+Priority: optional
+Maintainer: Infra Team <sysadmin@company.ru>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: infra-monitoring-config
+Architecture: all
+Depends: ${misc:Depends}, infra-common (>= 1.0.0), prometheus,
+ prometheus-alertmanager, firewalld, nginx-light | nginx, apache2-utils
+Description: Конфигурация мониторинга инфраструктуры VPN-сервиса
+ Приносит на сервер мониторинга конфигурацию Prometheus, правила алертов
+ и настройки Alertmanager. Установка пакета превращает голый Prometheus
+ в настроенную систему наблюдения за конкретной инфраструктурой.
+ .
+ Правила разложены по смыслу, а не свалены в один файл:
+ .
+  * node.rules.yml — доступность машин, процессор, память, диск,
+    расхождение часов. Один набор для всех ВМ сети;
+  * openvpn.rules.yml — состояние самого сервиса, включая зависший
+    демон, который проверка systemctl не поймает;
+  * certs.rules.yml — сроки действия сертификатов и списка отзыва;
+  * backup.rules.yml — свежесть, успешность и правдоподобный размер
+    резервных копий.
+ .
+ В Alertmanager настроено подавление вторичных алертов: падение машины
+ даёт одно письмо, а не пять про каждый её симптом.
+ .
+ Конфигурации написаны под версии из Ubuntu 20.04 — Prometheus 2.15 и
+ Alertmanager 0.15. Современные конструкции вроде matchers и
+ smtp_auth_password_file там ещё не поддерживаются. Собственной
+ аутентификации у Prometheus 2.15 тоже нет, поэтому веб-интерфейсы
+ закрываются обратным прокси nginx, что заодно готовит точку для HTTPS.

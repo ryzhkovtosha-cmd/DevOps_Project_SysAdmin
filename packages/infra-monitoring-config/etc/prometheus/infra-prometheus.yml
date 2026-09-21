@@ -1,0 +1,67 @@
+# Конфигурация Prometheus. Приносится пакетом infra-monitoring-config.
+
+global:
+  # Раз в 15 секунд достаточно: метрики инфраструктуры меняются медленно,
+  # а более частый опрос раздувает базу без пользы.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+    infra: vpn-service
+
+# Куда отправлять сработавшие алерты.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+# Файлы с правилами. Разделены по смыслу, а не свалены в один:
+# так понятнее, где искать нужный алерт.
+rule_files:
+  - /etc/prometheus/rules/node.rules.yml
+  - /etc/prometheus/rules/openvpn.rules.yml
+  - /etc/prometheus/rules/certs.rules.yml
+  - /etc/prometheus/rules/backup.rules.yml
+
+scrape_configs:
+  # Prometheus следит за собой: если он сам деградирует, об этом нужно
+  # знать раньше, чем по нему начнут принимать решения.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          role: 'monitoring'
+
+  # Инфраструктурные метрики со ВСЕХ машин. Один набор на всю сеть —
+  # добавление новой ВМ сводится к одной строке здесь.
+  - job_name: 'node'
+    static_configs:
+      - targets: ['10.128.0.10:9100']
+        labels: { instance_name: 'ca-server',     role: 'ca'         }
+      - targets: ['10.128.0.11:9100']
+        labels: { instance_name: 'vpn-server',    role: 'vpn'        }
+      - targets: ['10.128.0.12:9100']
+        labels: { instance_name: 'mon-server',    role: 'monitoring' }
+      - targets: ['10.129.0.10:9100']
+        labels: { instance_name: 'backup-server', role: 'backup'     }
+
+  # Метрики самого OpenVPN приходят через textfile-коллектор
+  # node-exporter в рамках задания 'node' — отдельный порт и отдельный
+  # демон для них не нужны. Подробности в man infra-openvpn-metrics.
+
+  # Проверка доступности VPN снаружи — через blackbox_exporter.
+  # Раскомментируйте после его установки: даёт ответ на вопрос
+  # «видит ли сервер внешний мир», а не только «жив ли процесс».
+  # - job_name: 'blackbox-vpn'
+  #   metrics_path: /probe
+  #   params:
+  #     module: [icmp]
+  #   static_configs:
+  #     - targets: ['10.128.0.11']
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: __param_target
+  #     - source_labels: [__param_target]
+  #       target_label: instance
+  #     - target_label: __address__
+  #       replacement: 127.0.0.1:9115

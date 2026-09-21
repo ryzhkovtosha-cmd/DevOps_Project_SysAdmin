@@ -9,7 +9,7 @@ Rules-Requires-Root: no
 Package: infra-vpn-config
 Architecture: all
 Depends: ${misc:Depends}, infra-common (>= 1.0.0), openvpn (>= 2.4),
- easy-rsa (>= 3.0.0), firewalld, openssl
+ easy-rsa (>= 3.0.0), firewalld, openssl, prometheus-node-exporter
 Description: Конфигурация VPN-сервера компании
  Приносит на машину готовую конфигурацию OpenVPN и инструмент выдачи
  доступа сотрудникам. Заменяет ручную правку двух десятков строк в
@@ -23,7 +23,11 @@ Description: Конфигурация VPN-сервера компании
   * /etc/infra-vpn/base.conf.template — шаблон клиентской конфигурации;
   * /etc/sysctl.d/61-infra-vpn-forward.conf — включение маршрутизации;
   * описание службы для firewalld;
-  * команду infra-vpn-make-client для сборки комплекта сотруднику.
+  * команду infra-vpn-make-client для сборки комплекта сотруднику;
+  * команду infra-openvpn-metrics и таймер к ней: раз в 30 секунд
+    превращает файл состояния сервера в метрики Prometheus. Готовый
+    экспортёр не используется намеренно — наиболее известный из них
+    заархивирован в 2021 году и не публикует собранных бинарных файлов.
  .
  Установочный сценарий намеренно не запускает OpenVPN: на момент установки
  сертификаты ещё не выпущены, и служба упала бы с ошибкой. Запуск делает

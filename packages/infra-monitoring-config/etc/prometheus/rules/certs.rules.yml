@@ -1,0 +1,48 @@
+# Сроки действия сертификатов. Метрики пишет скрипт infra-cert-metrics
+# через textfile-коллектор node_exporter.
+#
+# Зачем отдельный алерт: истёкший сертификат — самая обидная авария.
+# Сервис работал годами и в одну ночь перестал, хотя ничего не менялось.
+groups:
+  - name: certificates
+    rules:
+      - alert: CertificateExpiringSoon
+        expr: (infra_cert_expiry_timestamp_seconds - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Сертификат {{ $labels.cert_name }} истекает через {{ $value | printf \"%.0f\" }} дней"
+          description: >-
+            Перевыпуск требует похода в удостоверяющий центр и повторной
+            раздачи файлов сотрудникам. Начинайте заранее.
+
+      - alert: CertificateExpiringCritical
+        expr: (infra_cert_expiry_timestamp_seconds - time()) / 86400 < 7
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сертификат {{ $labels.cert_name }} истекает через {{ $value | printf \"%.0f\" }} дней"
+          description: "Осталась неделя. После истечения сервис остановится."
+
+      - alert: CertificateExpired
+        expr: infra_cert_expiry_timestamp_seconds - time() <= 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сертификат {{ $labels.cert_name }} ИСТЁК"
+          description: "Подключения по нему уже не работают."
+
+      - alert: CRLExpiringSoon
+        # Список отзыва тоже имеет срок. Просроченный CRL заставляет
+        # OpenVPN отвергать ВСЕ подключения — авария на ровном месте.
+        expr: (infra_crl_expiry_timestamp_seconds - time()) / 86400 < 14
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Список отзыва сертификатов истекает"
+          description: >-
+            При просроченном CRL сервер отвергнет ВСЕХ клиентов.
+            Обновить: на CA выполнить easyrsa gen-crl и перенести crl.pem.

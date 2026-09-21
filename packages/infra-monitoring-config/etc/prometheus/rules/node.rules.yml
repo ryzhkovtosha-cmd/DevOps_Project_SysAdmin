@@ -1,0 +1,110 @@
+# Инфраструктурные алерты. Применимы к любой машине в сети — один набор
+# переиспользуется для всех ВМ, как требует пункт 1a блока 3 ТЗ.
+groups:
+  - name: node-availability
+    rules:
+      - alert: InstanceDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Машина {{ $labels.instance_name }} недоступна"
+          description: >-
+            Prometheus не может собрать метрики с {{ $labels.instance }}
+            более двух минут. Машина выключена, перезагружается, упал
+            node_exporter или закрылся сетевой путь.
+          runbook: >-
+            1) yc compute instance get --name {{ $labels.instance_name }}
+            2) ssh на машину, systemctl status prometheus-node-exporter
+            3) проверить правила firewalld и группу безопасности
+
+      - alert: HostRebooted
+        expr: (node_time_seconds - node_boot_time_seconds) < 600
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Машина {{ $labels.instance_name }} перезагрузилась"
+          description: >-
+            Время работы менее 10 минут. Если перезагрузку никто не
+            планировал, это повод разобраться: облачный провайдер мог
+            выполнять работы, или машина упала по нехватке памяти.
+
+      - alert: SystemdUnitFailed
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Служба {{ $labels.name }} в состоянии failed на {{ $labels.instance_name }}"
+          description: "journalctl -u {{ $labels.name }} -n 50"
+
+  - name: node-resources
+    rules:
+      - alert: HostHighCpuLoad
+        # irate по режиму idle: доля времени, когда процессор бездействовал.
+        # Вычитаем из единицы и получаем реальную загрузку.
+        expr: >-
+          100 - (avg by (instance, instance_name)
+          (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Загрузка процессора выше 85% на {{ $labels.instance_name }}"
+          description: >-
+            Держится более 10 минут. Порог намеренно высокий и с большим
+            окном: короткие всплески при обновлении пакетов — норма,
+            будить по ним никого не нужно.
+
+      - alert: HostOutOfMemory
+        expr: >-
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Свободной памяти меньше 10% на {{ $labels.instance_name }}"
+          description: >-
+            Используется MemAvailable, а не MemFree: ядро отдаёт под кеш
+            всю свободную память, и MemFree на здоровой машине всегда мал.
+
+      - alert: HostOutOfDiskSpace
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs"} * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Свободно менее 10% на {{ $labels.mountpoint }} ({{ $labels.instance_name }})"
+          description: >-
+            Закончившееся место — частая причина отказа: перестают писаться
+            журналы, ломаются бэкапы, база Prometheus уходит в read-only.
+
+      - alert: HostDiskWillFillIn24h
+        # predict_linear экстраполирует тренд за 6 часов на сутки вперёд.
+        # Этот алерт срабатывает ДО того, как место кончится, и даёт время
+        # среагировать спокойно, а не ночью по критическому оповещению.
+        expr: >-
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs"}[6h], 24*3600) < 0
+          and node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs"} / node_filesystem_size_bytes * 100 < 30
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} на {{ $labels.instance_name }} заполнится за сутки"
+          description: "Прогноз по тренду за последние 6 часов."
+
+      - alert: HostClockSkew
+        expr: abs(node_timex_offset_seconds) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Расхождение часов на {{ $labels.instance_name }}"
+          description: >-
+            Более полусекунды. Для TLS это критично: сертификат может
+            считаться ещё не действующим или уже истёкшим, и подключения
+            начнут отваливаться с необъяснимыми ошибками.

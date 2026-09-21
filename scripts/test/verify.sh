@@ -209,6 +209,20 @@ verify_vpn() {
     local clients
     clients="$(grep -c '^10\.8\.0\.' /var/log/openvpn/openvpn-status.log 2>/dev/null || echo 0)"
     ok "Подключённых клиентов сейчас: ${clients}"
+
+    # Метрики OpenVPN идут через textfile-коллектор node-exporter,
+    # отдельного демона и порта для них нет.
+    if systemctl is-enabled --quiet infra-openvpn-metrics.timer 2>/dev/null; then
+        ok "Таймер сбора метрик OpenVPN включён"
+    else
+        warn "Таймер infra-openvpn-metrics.timer выключен — метрик не будет"
+    fi
+    if [[ -f /var/lib/node_exporter/textfile_collector/infra_openvpn.prom ]]; then
+        ok "Метрики OpenVPN пишутся: $(grep -c '^openvpn_' \
+            /var/lib/node_exporter/textfile_collector/infra_openvpn.prom) значений"
+    else
+        fail "Метрики OpenVPN отсутствуют"
+    fi
 }
 
 # --- Сервер мониторинга -----------------------------------------------------
@@ -228,15 +242,38 @@ verify_mon() {
         else fail "Есть ошибки в правилах алертов"; fi
     fi
 
-    if [[ -f /etc/prometheus/web.yml ]]; then ok "Веб-интерфейс закрыт паролем"
-    else warn "Веб-интерфейс Prometheus открыт без аутентификации"; fi
+    # Аутентификацию обеспечивает обратный прокси: Prometheus 2.15 из
+    # Ubuntu 20.04 своей не умеет, --web.config.file появился в 2.24.
+    if [[ -f /etc/nginx/infra-monitoring.htpasswd ]]; then
+        ok "Веб-интерфейс закрыт паролем"
+    else
+        fail "Веб-интерфейс открыт без аутентификации"
+    fi
+    check "Обратный прокси работает" systemctl is-active --quiet nginx
+
+    # Сами службы не должны быть видны снаружи в обход прокси.
+    if ss -lntH 2>/dev/null | grep -q "127.0.0.1:${PORT_PROMETHEUS}"; then
+        ok "Prometheus слушает только loopback"
+    else
+        fail "Prometheus доступен в обход прокси — аутентификацию можно обойти"
+    fi
+
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+            "http://${MON_IP}:${PORT_PROMETHEUS}/" 2>/dev/null || true)"
+    if [[ "${code}" == "401" ]]; then
+        ok "Внешний доступ требует пароль (HTTP 401)"
+    else
+        fail "Внешний доступ вернул ${code}, ожидался 401"
+    fi
 
     # Сколько целей реально отвечает. Именно это отличает «мониторинг
     # настроен» от «мониторинг работает».
     local targets_up targets_total
-    targets_up="$(curl -s --max-time 5 "http://localhost:${PORT_PROMETHEUS}/api/v1/query?query=sum(up)" 2>/dev/null \
+    # Через loopback, а не через прокси: локальным проверкам пароль не нужен.
+    targets_up="$(curl -s --max-time 5 "http://127.0.0.1:${PORT_PROMETHEUS}/api/v1/query?query=sum(up)" 2>/dev/null \
         | grep -oE '"[0-9]+"' | tail -1 | tr -d '"')"
-    targets_total="$(curl -s --max-time 5 "http://localhost:${PORT_PROMETHEUS}/api/v1/query?query=count(up)" 2>/dev/null \
+    targets_total="$(curl -s --max-time 5 "http://127.0.0.1:${PORT_PROMETHEUS}/api/v1/query?query=count(up)" 2>/dev/null \
         | grep -oE '"[0-9]+"' | tail -1 | tr -d '"')"
     if [[ -n "${targets_up}" && -n "${targets_total}" ]]; then
         if [[ "${targets_up}" == "${targets_total}" ]]; then
@@ -248,14 +285,24 @@ verify_mon() {
         warn "Не удалось опросить API Prometheus (возможно, включена аутентификация)"
     fi
 
+    # Разбираем JSON, а не считаем вхождения '"name"': так в счёт попадали
+    # имена групп и ключи меток, и вместо 22 правил выходило 30.
     local rules_loaded
-    rules_loaded="$(curl -s --max-time 5 "http://localhost:${PORT_PROMETHEUS}/api/v1/rules" 2>/dev/null \
-        | grep -o '"name"' | wc -l)"
+    rules_loaded="$(curl -s --max-time 5 "http://127.0.0.1:${PORT_PROMETHEUS}/api/v1/rules" 2>/dev/null \
+        | python3 -c 'import json,sys; g=json.load(sys.stdin)["data"]["groups"]; print(sum(len(x["rules"]) for x in g))' \
+        2>/dev/null || echo 0)"
     if [[ "${rules_loaded}" -gt 0 ]]; then ok "Загружено правил: ${rules_loaded}"
     else warn "Правила не загружены или API недоступно"; fi
 
-    if [[ -s /etc/prometheus/smtp-password ]]; then ok "Пароль SMTP задан"
-    else warn "Пароль SMTP не задан — письма отправляться не будут"; fi
+    if grep -q '@@SMTP_PASSWORD@@' /etc/prometheus/infra-alertmanager.yml 2>/dev/null; then
+        warn "Пароль SMTP не подставлен — письма отправляться не будут"
+    else
+        ok "Пароль SMTP задан"
+        perms="$(stat -c '%a' /etc/prometheus/infra-alertmanager.yml 2>/dev/null)"
+        [[ "${perms}" == "640" || "${perms}" == "600" ]] \
+            && ok "Права на конфигурацию с паролем: ${perms}" \
+            || fail "Права на файл с паролем SMTP: ${perms}, ожидалось 640"
+    fi
 }
 
 # --- Резервное копирование --------------------------------------------------

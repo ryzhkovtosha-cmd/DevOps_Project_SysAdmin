@@ -1,0 +1,43 @@
+# Обратный прокси для веб-интерфейсов мониторинга.
+# Шаблон из пакета infra-monitoring-config; адрес подставляет
+# setup-prometheus.sh, поэтому в самом пакете его нет.
+#
+# Зачем прокси. Веб-интерфейс Prometheus показывает схему сети, имена
+# машин, их адреса и состояние всех сервисов — готовую карту для
+# разведки. Собственной аутентификации у версии 2.15 из Ubuntu 20.04 нет:
+# флаг --web.config.file появился только в 2.24. Прокси с проверкой
+# пароля решает это независимо от версии и заодно даёт готовую точку для
+# подключения HTTPS через Let's Encrypt.
+#
+# Службы слушают 127.0.0.1, а nginx — внутренний адрес машины. Порты
+# совпадают, конфликта нет: адреса разные.
+
+server {
+    listen @@LISTEN_ADDR@@:9090;
+    server_name _;
+
+    auth_basic "Prometheus";
+    auth_basic_user_file /etc/nginx/infra-monitoring.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:9090;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Prometheus сам отдаёт длинные ответы на тяжёлых запросах.
+        proxy_read_timeout 120s;
+    }
+}
+
+server {
+    listen @@LISTEN_ADDR@@:9093;
+    server_name _;
+
+    auth_basic "Alertmanager";
+    auth_basic_user_file /etc/nginx/infra-monitoring.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:9093;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

@@ -1,0 +1,54 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Права на конфигурации: служба работает не от root, а в
+        # infra-alertmanager.yml после настройки окажется пароль SMTP.
+        if getent passwd prometheus >/dev/null 2>&1; then
+            for f in infra-prometheus.yml infra-alertmanager.yml \
+                     infra-prometheus.env infra-alertmanager.env; do
+                chown --no-dereference root:prometheus "/etc/prometheus/${f}" 2>/dev/null || true
+            done
+            chmod 0640 /etc/prometheus/infra-alertmanager.yml 2>/dev/null || true
+            for rule in node openvpn certs backup; do
+                chown --no-dereference root:prometheus \
+                    "/etc/prometheus/rules/${rule}.rules.yml" 2>/dev/null || true
+            done
+        fi
+
+        # Проверяем конфигурацию ДО перезапуска. Служба со сломанным
+        # конфигом не стартует, и мы останемся без мониторинга ровно
+        # тогда, когда он нужнее всего.
+        if command -v promtool >/dev/null 2>&1; then
+            if promtool check config /etc/prometheus/infra-prometheus.yml >/dev/null 2>&1; then
+                echo "infra-monitoring-config: конфигурация проверена"
+            else
+                echo "infra-monitoring-config: конфигурация НЕ прошла проверку, перезапуск отменён" >&2
+                promtool check config /etc/prometheus/infra-prometheus.yml >&2 || true
+                exit 0
+            fi
+        fi
+
+        if [ -d /run/systemd/system ]; then
+            # daemon-reload обязателен: без него systemd не увидит
+            # принесённые drop-in и запустит службы со старыми параметрами.
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            deb-systemd-invoke restart prometheus.service >/dev/null 2>&1 || true
+            deb-systemd-invoke restart prometheus-alertmanager.service >/dev/null 2>&1 || true
+        fi
+
+        echo "infra-monitoring-config установлен."
+        echo "Дальше: sudo ./setup-prometheus.sh — пароль веб-доступа и SMTP."
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

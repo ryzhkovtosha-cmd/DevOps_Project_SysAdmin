@@ -1,0 +1,35 @@
+infra-monitoring-config (1.0.3) stable; urgency=medium
+
+  * EnvironmentFile в drop-in помечен необязательным. Drop-in попадает
+    на диск при распаковке, а .env — conffile и появляется только при
+    configure. Между этими моментами штатный сценарий пакета prometheus
+    пытался запустить службу, systemd не находил файл и отказывал с
+    "Result: resources", из-за чего не настраивался ни prometheus,
+    ни наш пакет.
+
+ -- Infra Team <sysadmin@company.ru>  Sun, 20 Sep 2026 11:48:57 +0000
+
+infra-monitoring-config (1.0.2) stable; urgency=medium
+
+  * Конфигурации приведены к синтаксису версий из Ubuntu 20.04:
+    Alertmanager 0.15.3 не понимает matchers и smtp_auth_password_file.
+  * Параметры запуска передаются через дополнительный EnvironmentFile
+    вместо переопределения ExecStart.
+  * Веб-интерфейсы закрываются обратным прокси nginx: Prometheus 2.15
+    не поддерживает --web.config.file.
+
+ -- Infra Team <sysadmin@company.ru>  Sat, 19 Sep 2026 11:48:57 +0000
+
+infra-monitoring-config (1.0.1) stable; urgency=medium
+
+  * Исправлен конфликт файлов с пакетами prometheus и
+    prometheus-alertmanager.
+
+ -- Infra Team <sysadmin@company.ru>  Fri, 18 Sep 2026 11:48:57 +0000
+
+infra-monitoring-config (1.0.0) stable; urgency=medium
+
+  * Первый выпуск: конфигурация Prometheus, четыре набора правил,
+    настройка Alertmanager с подавлением вторичных алертов.
+
+ -- Infra Team <sysadmin@company.ru>  Wed, 16 Sep 2026 11:48:57 +0000

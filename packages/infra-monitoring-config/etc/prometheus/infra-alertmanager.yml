@@ -1,0 +1,80 @@
+# Конфигурация Alertmanager. Приносится пакетом infra-monitoring-config.
+#
+# ВНИМАНИЕ: синтаксис намеренно старый. В Ubuntu 20.04 поставляется
+# Alertmanager 0.15.3 (2018 год), который не понимает современных
+# конструкций:
+#   matchers: / source_matchers: / target_matchers:  появились в 0.22
+#   smtp_auth_password_file                          появился в 0.25
+# Здесь используются match / source_match / target_match_re, которые
+# работают и в 0.15, и во всех последующих версиях.
+#
+# Пароль SMTP подставляется скриптом setup-prometheus.sh: версия 0.15
+# не умеет читать его из отдельного файла, поэтому он оказывается прямо
+# в этой конфигурации. Права на файл выставляются 0640 root:prometheus.
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.yandex.ru:587'
+  smtp_from: 'alerts@company.ru'
+  smtp_auth_username: 'alerts@company.ru'
+  smtp_auth_password: '@@SMTP_PASSWORD@@'
+  smtp_require_tls: true
+
+route:
+  # Группируем по имени алерта и машине: если разом отвалились четыре
+  # сервера, придёт одно письмо про четыре, а не четыре письма.
+  group_by: ['alertname', 'instance_name']
+  # Ждём 30 секунд после первого срабатывания — вдруг подтянутся связанные.
+  group_wait: 30s
+  group_interval: 5m
+  # Напоминание о неустранённой проблеме раз в 4 часа. Чаще получается
+  # спам, на который перестают смотреть.
+  repeat_interval: 4h
+  receiver: 'email-default'
+
+  routes:
+    # Критические — отдельный маршрут с более частыми напоминаниями.
+    - match:
+        severity: critical
+      receiver: 'email-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Информационные не будят никого: копятся и приходят раз в сутки.
+    - match:
+        severity: info
+      receiver: 'email-default'
+      repeat_interval: 24h
+
+receivers:
+  - name: 'email-default'
+    email_configs:
+      - to: 'sysadmin@company.ru'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+
+  - name: 'email-critical'
+    email_configs:
+      - to: 'sysadmin@company.ru'
+        send_resolved: true
+        headers:
+          Subject: '[КРИТИЧНО] {{ .CommonLabels.alertname }} — {{ .CommonLabels.instance_name }}'
+
+# Подавление вторичных алертов. Когда машина падает целиком, срабатывает
+# не один алерт, а пять: недоступность, отсутствие метрик памяти, упавшие
+# юниты, молчащий экспортёр. Четыре из них — следствия, а не отдельные
+# проблемы. Без этого правила падение одного сервера даёт пять писем,
+# из которых полезно одно, и почту с алертами перестают читать.
+inhibit_rules:
+  - source_match:
+      alertname: 'InstanceDown'
+    target_match_re:
+      severity: 'warning|info'
+    equal: ['instance_name']
+
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance_name']

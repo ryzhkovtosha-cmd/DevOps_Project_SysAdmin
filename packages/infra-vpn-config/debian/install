@@ -3,3 +3,4 @@ etc/infra-vpn/base.conf.template etc/infra-vpn/
 etc/sysctl.d/61-infra-vpn-forward.conf etc/sysctl.d/
 usr/lib/firewalld/services/openvpn-infra.xml usr/lib/firewalld/services/
 usr/sbin/infra-vpn-make-client usr/sbin/
+usr/sbin/infra-openvpn-metrics usr/sbin/

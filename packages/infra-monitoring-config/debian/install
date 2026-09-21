@@ -1,0 +1,11 @@
+etc/prometheus/infra-prometheus.yml etc/prometheus/
+etc/prometheus/infra-alertmanager.yml etc/prometheus/
+etc/prometheus/infra-prometheus.env etc/prometheus/
+etc/prometheus/infra-alertmanager.env etc/prometheus/
+etc/prometheus/rules/node.rules.yml etc/prometheus/rules/
+etc/prometheus/rules/openvpn.rules.yml etc/prometheus/rules/
+etc/prometheus/rules/certs.rules.yml etc/prometheus/rules/
+etc/prometheus/rules/backup.rules.yml etc/prometheus/rules/
+usr/share/infra-monitoring/nginx-site.template usr/share/infra-monitoring/
+usr/lib/systemd/system/prometheus.service.d/10-infra-monitoring.conf usr/lib/systemd/system/prometheus.service.d/
+usr/lib/systemd/system/prometheus-alertmanager.service.d/10-infra-monitoring.conf usr/lib/systemd/system/prometheus-alertmanager.service.d/

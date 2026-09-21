@@ -1,0 +1,80 @@
+# Алерты самого сервиса VPN. Метрики пишет infra-openvpn-metrics —
+# собственный сборщик, разбирающий /var/log/openvpn/openvpn-status.log
+# и отдающий результат через textfile-коллектор node-exporter.
+groups:
+  - name: openvpn-service
+    rules:
+      - alert: OpenVPNMetricsStale
+        # Метрики пишет таймер infra-openvpn-metrics раз в 30 секунд.
+        # Если метрика openvpn_up вовсе пропала из выдачи, значит
+        # перестал работать таймер или node-exporter на VPN-сервере.
+        expr: absent(openvpn_up) == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Метрики OpenVPN не обновляются"
+          description: >-
+            Сам VPN может при этом работать. Но пока метрик нет, мы
+            слепы к состоянию сервиса. Проверьте таймер:
+            systemctl status infra-openvpn-metrics.timer
+
+      - alert: OpenVPNServiceDown
+        # openvpn_up показывает, удалось ли экспортёру прочитать файл
+        # состояния. Ноль означает, что файла нет или он недоступен —
+        # почти всегда это означает, что демон не работает.
+        expr: openvpn_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VPN-сервер не работает"
+          description: >-
+            Сотрудники не могут подключиться к внутренней сети.
+            Проверьте: systemctl status openvpn-server@server
+            и journalctl -u openvpn-server@server -n 50
+
+      - alert: OpenVPNStatusFileStale
+        # Сервер переписывает файл состояния раз в минуту. Если отметка
+        # времени не обновлялась пять минут, процесс жив, но завис —
+        # состояние, которое проверка systemctl не поймает.
+        expr: time() - openvpn_status_update_time_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Файл состояния OpenVPN не обновляется"
+          description: >-
+            Процесс запущен, но не пишет состояние более 5 минут.
+            Вероятно, демон завис. Требуется перезапуск службы.
+
+      - alert: OpenVPNNoClientsConnected
+        # Косвенный признак поломки. Днём в рабочие часы хотя бы один
+        # сотрудник обычно подключён. Полное отсутствие подключений —
+        # повод проверить, не отвалился ли порт или NAT.
+        expr: openvpn_server_connected_clients == 0
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: "К VPN никто не подключён более 2 часов"
+          description: >-
+            Ночью и в выходные это норма. В рабочее время — повод
+            проверить доступность порта 1194/udp снаружи:
+            nc -vzu <публичный-ip> 1194
+
+      - alert: OpenVPNClientDropSpike
+        # Резкое падение числа подключений: было больше трёх, стало ноль.
+        # Отличает массовый обрыв от того, что люди просто разошлись.
+        expr: >-
+          (max_over_time(openvpn_server_connected_clients[15m]) > 3)
+          and (openvpn_server_connected_clients == 0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Массовый обрыв подключений к VPN"
+          description: >-
+            За последние 15 минут было более трёх клиентов, сейчас ноль.
+            Похоже на перезапуск демона, потерю внешнего адреса или
+            изменение правил фаервола.

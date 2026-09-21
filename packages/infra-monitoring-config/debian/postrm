@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Убираем только то, что создали сами. Штатные prometheus.yml и
+        # alertmanager.yml принадлежат своим пакетам и остаются на месте.
+        rm -f /etc/nginx/sites-enabled/infra-monitoring
+        rm -f /etc/nginx/sites-available/infra-monitoring
+        rm -f /etc/nginx/infra-monitoring.htpasswd
+        rmdir --ignore-fail-on-non-empty /etc/prometheus/rules 2>/dev/null || true
+        rmdir --ignore-fail-on-non-empty /usr/share/infra-monitoring 2>/dev/null || true
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            deb-systemd-invoke reload nginx.service >/dev/null 2>&1 || true
+        fi
+        # Историю метрик в /var/lib/prometheus не трогаем: она
+        # принадлежит пакету prometheus, а не нашему.
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm вызван с неизвестным аргументом: $1" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

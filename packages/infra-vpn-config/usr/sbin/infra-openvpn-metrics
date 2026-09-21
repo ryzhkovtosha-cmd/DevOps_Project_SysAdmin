@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Превращает файл состояния OpenVPN в метрики Prometheus.
+#
+# Запускается по таймеру раз в 30 секунд. Результат кладётся в каталог
+# textfile-коллектора node-exporter, откуда Prometheus забирает его при
+# обычном опросе порта 9100.
+#
+# ПОЧЕМУ СВОЙ СБОРЩИК, А НЕ ГОТОВЫЙ ЭКСПОРТЁР.
+# Самый известный, kumina/openvpn_exporter, заархивирован в августе
+# 2021 года, и готовых бинарников в его релизах нет — только исходники,
+# которые нужно собирать компилятором Go. Ставить Go на рабочий сервер
+# ради одного файла в 200 строк неразумно, а зависеть от стороннего
+# форка — значит завязаться на чужой график выпусков.
+#
+# Здесь же нет ни отдельного демона, ни сетевого порта, ни системного
+# пользователя, ни правила фаервола. Меньше движущихся частей — меньше
+# способов сломаться.
+#
+# Имена метрик намеренно совпадают с теми, что отдавал kumina-экспортёр:
+# правила алертов писались под них и работают без изменений.
+
+source /usr/share/infra/common.sh
+
+readonly STATUS_FILE="/var/log/openvpn/openvpn-status.log"
+readonly TEXTFILE_DIR="/var/lib/node_exporter/textfile_collector"
+readonly OUT="${TEXTFILE_DIR}/infra_openvpn.prom"
+
+require_root
+
+ensure_dir "${TEXTFILE_DIR}" 0755 "root:root"
+
+# Пишем во временный файл и переименовываем: node-exporter может
+# прочитать файл в любой момент и не должен застать его недописанным.
+TMP="$(mktemp "${OUT}.XXXXXX")"
+trap 'rm -f "${TMP}"' EXIT INT TERM
+
+{
+    printf '# HELP openvpn_up Удалось ли прочитать файл состояния OpenVPN\n'
+    printf '# TYPE openvpn_up gauge\n'
+    printf '# HELP openvpn_status_update_time_seconds Когда сервер последний раз обновлял состояние\n'
+    printf '# TYPE openvpn_status_update_time_seconds gauge\n'
+    printf '# HELP openvpn_server_connected_clients Число подключённых клиентов\n'
+    printf '# TYPE openvpn_server_connected_clients gauge\n'
+    printf '# HELP openvpn_server_client_received_bytes_total Принято байт от клиента\n'
+    printf '# TYPE openvpn_server_client_received_bytes_total counter\n'
+    printf '# HELP openvpn_server_client_sent_bytes_total Отправлено байт клиенту\n'
+    printf '# TYPE openvpn_server_client_sent_bytes_total counter\n'
+} > "${TMP}"
+
+if [[ ! -r "${STATUS_FILE}" ]]; then
+    # Файла нет — служба не запущена либо ещё не было ни одного клиента.
+    # Отдаём ноль, чтобы алерт OpenVPNServiceDown сработал, а не чтобы
+    # метрика молча исчезла: пропавшую метрику Prometheus не отличит
+    # от «всё хорошо».
+    printf 'openvpn_up{status_path="%s"} 0\n' "${STATUS_FILE}" >> "${TMP}"
+    printf 'openvpn_server_connected_clients 0\n' >> "${TMP}"
+    chmod 644 "${TMP}"; mv "${TMP}" "${OUT}"; trap - EXIT INT TERM
+    log_warn "Файл состояния ${STATUS_FILE} недоступен"
+    exit 0
+fi
+
+printf 'openvpn_up{status_path="%s"} 1\n' "${STATUS_FILE}" >> "${TMP}"
+
+# Отметка времени. Строка вида: Updated,Thu Sep 20 12:00:00 2026
+# Дата в файле всегда на английском, поэтому разбираем её в локали C.
+updated_raw="$(grep -m1 '^Updated,' "${STATUS_FILE}" | cut -d, -f2- || true)"
+if [[ -n "${updated_raw}" ]]; then
+    updated_ts="$(LC_ALL=C date -d "${updated_raw}" +%s 2>/dev/null || true)"
+    if [[ -n "${updated_ts}" ]]; then
+        printf 'openvpn_status_update_time_seconds{status_path="%s"} %s\n' \
+            "${STATUS_FILE}" "${updated_ts}" >> "${TMP}"
+    fi
+fi
+
+# Список клиентов лежит между заголовком CLIENT LIST и строкой
+# ROUTING TABLE. Формат строки:
+#   Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since
+clients=0
+while IFS=',' read -r cn _real recv sent _since; do
+    [[ -n "${cn}" ]] || continue
+
+    # Клиентской считается ТОЛЬКО строка, где счётчики байт — числа.
+    # Отсеивать служебные строки по их тексту оказалось ненадёжно:
+    # шаблон для "Updated," требовал конца строки сразу после запятой,
+    # а там идёт дата, и строка проходила фильтр, давая лишнего клиента.
+    # Проверка по типу данных не зависит от формулировок заголовков и
+    # переживёт смену версии OpenVPN.
+    [[ "${recv}" =~ ^[0-9]+$ ]] || continue
+    [[ "${sent}" =~ ^[0-9]+$ ]] || continue
+
+    # Защита от подстановки: имя попадает в метку метрики.
+    cn_escaped="${cn//\\/\\\\}"
+    cn_escaped="${cn_escaped//\"/\\\"}"
+    clients=$((clients + 1))
+    printf 'openvpn_server_client_received_bytes_total{common_name="%s"} %s\n' \
+        "${cn_escaped}" "${recv}" >> "${TMP}"
+    printf 'openvpn_server_client_sent_bytes_total{common_name="%s"} %s\n' \
+        "${cn_escaped}" "${sent}" >> "${TMP}"
+done < <(sed -n '/^OpenVPN CLIENT LIST$/,/^ROUTING TABLE$/p' "${STATUS_FILE}" \
+         | grep -vE '^(OpenVPN CLIENT LIST|Updated,|ROUTING TABLE)$' || true)
+
+printf 'openvpn_server_connected_clients %s\n' "${clients}" >> "${TMP}"
+
+chmod 644 "${TMP}"
+mv "${TMP}" "${OUT}"
+trap - EXIT INT TERM
+log_ok "Метрики OpenVPN записаны: клиентов ${clients}"

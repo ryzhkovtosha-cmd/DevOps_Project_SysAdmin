@@ -1,0 +1,12 @@
+[Unit]
+Description=Сбор метрик OpenVPN каждые 30 секунд
+
+[Timer]
+OnBootSec=1min
+# Сервер переписывает файл состояния раз в минуту, поэтому чаще
+# тридцати секунд опрашивать бессмысленно.
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

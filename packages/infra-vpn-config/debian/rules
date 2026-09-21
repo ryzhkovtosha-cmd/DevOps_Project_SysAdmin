@@ -1,4 +1,11 @@
 #!/usr/bin/make -f
-
 %:
 	dh $@
+
+# Юниты названы не по имени пакета, поэтому dh_installsystemd нужно
+# указать имя явно. В каждом вызове юнит указывается ЯВНО: иначе первый
+# вызов пометит --no-enable все юниты, включая таймер, и тот установится
+# выключенным.
+override_dh_installsystemd:
+	dh_installsystemd --name=infra-openvpn-metrics --no-enable --no-start infra-openvpn-metrics.service
+	dh_installsystemd --name=infra-openvpn-metrics infra-openvpn-metrics.timer

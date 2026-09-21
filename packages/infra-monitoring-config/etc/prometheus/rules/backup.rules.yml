@@ -1,0 +1,58 @@
+# Контроль резервного копирования.
+#
+# Главная мысль: «бэкап настроен» и «бэкап делается» — разные вещи.
+# Молчаливо сломавшийся бэкап обнаруживается ровно в тот момент, когда
+# он понадобился, то есть в худший из возможных. Поэтому сам процесс
+# копирования — такой же объект мониторинга, как и сервисы.
+groups:
+  - name: backup
+    rules:
+      - alert: BackupTooOld
+        # Копирование по расписанию раз в сутки. Порог 26 часов даёт запас
+        # на сдвиг расписания и длительность самой задачи.
+        expr: (time() - infra_backup_last_success_timestamp_seconds) > 26 * 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Резервная копия {{ $labels.backup_job }} устарела"
+          description: >-
+            Последнее успешное копирование более 26 часов назад.
+            journalctl -u infra-backup.service -n 50
+
+      - alert: BackupFailed
+        expr: infra_backup_last_exit_code != 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Задача копирования {{ $labels.backup_job }} завершилась с ошибкой"
+          description: "Код возврата: {{ $value }}"
+
+      - alert: BackupSizeAnomaly
+        # Копия внезапно стала втрое меньше обычной. Типичная причина —
+        # каталог с данными оказался не смонтирован, и в архив попала
+        # пустая точка монтирования. Формально задача успешна, фактически
+        # копии нет.
+        expr: >-
+          infra_backup_size_bytes
+          < 0.3 * avg_over_time(infra_backup_size_bytes[7d])
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Резервная копия {{ $labels.backup_job }} подозрительно мала"
+          description: >-
+            Текущий размер менее трети среднего за неделю. Проверьте, что
+            копируются реальные данные, а не пустой каталог.
+
+      - alert: BackupServerDown
+        expr: up{job="node", role="backup"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Сервер резервного копирования недоступен"
+          description: >-
+            Пока он лежит, новые копии не принимаются. Само по себе это
+            не авария сервиса, но восстановление сейчас невозможно.

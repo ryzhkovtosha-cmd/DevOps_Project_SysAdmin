@@ -1,0 +1,38 @@
+.TH INFRA-OPENVPN-METRICS 8 "2026-09-20" "infra-vpn-config 1.0.3" "Администрирование инфраструктуры"
+.SH ИМЯ
+infra-openvpn-metrics \- экспортировать состояние OpenVPN в Prometheus
+.SH СИНТАКСИС
+.B infra-openvpn-metrics
+.SH ОПИСАНИЕ
+Разбирает файл состояния
+.I /var/log/openvpn/openvpn-status.log
+и записывает метрики в каталог textfile\-коллектора
+.BR node_exporter .
+Запускается таймером
+.B infra-openvpn-metrics.timer
+каждые 30 секунд.
+.PP
+Готовый экспортёр не используется намеренно: наиболее известный,
+kumina/openvpn_exporter, заархивирован в 2021 году и не публикует
+собранных бинарных файлов. Собственный сборщик обходится без отдельного
+демона, сетевого порта, системного пользователя и правила фаервола.
+.SH МЕТРИКИ
+.TP
+.B openvpn_up
+Удалось ли прочитать файл состояния.
+.TP
+.B openvpn_status_update_time_seconds
+Когда сервер последний раз обновлял состояние. Ключевая метрика: она
+ловит зависший демон, который systemd по-прежнему считает работающим.
+.TP
+.B openvpn_server_connected_clients
+Число подключённых клиентов.
+.TP
+.B openvpn_server_client_received_bytes_total
+.TQ
+.B openvpn_server_client_sent_bytes_total
+Объём трафика по клиентам, метка
+.IR common_name .
+.SH СМОТРИ ТАКЖЕ
+.BR infra-vpn-make-client (8),
+.BR prometheus-node-exporter (1)

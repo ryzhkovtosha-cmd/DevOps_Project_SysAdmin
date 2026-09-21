@@ -1,16 +1,21 @@
+infra-node-metrics (1.0.2) stable; urgency=medium
+
+  * Таймер сбора метрик о сертификатах теперь действительно попадает
+    в автозапуск. Прежняя запись в debian/rules помечала --no-enable
+    все юниты сразу, и таймер устанавливался выключенным.
+
+ -- Infra Team <sysadmin@company.ru>  Sun, 20 Sep 2026 11:48:57 +0000
+
 infra-node-metrics (1.0.1) stable; urgency=medium
 
-  * Исправлен конфликт файлов с пакетом prometheus-node-exporter.
-    Настройки службы больше не подменяют чужой /etc/default/..., а
-    приносятся штатным drop-in для systemd.
-  * Из параметров запуска убран --collector.systemd.unit-include:
-    в node-exporter 0.18 (Ubuntu 20.04) этого флага нет, и служба
-    отказалась бы стартовать.
+  * Исправлен конфликт файлов с пакетом prometheus-node-exporter:
+    настройки приносятся drop-in для systemd.
+  * Убран --collector.systemd.unit-include: в node-exporter 0.18 его нет.
 
- -- Infra Team <sysadmin@company.ru>  Wed, 16 Sep 2026 11:50:19 +0000
+ -- Infra Team <sysadmin@company.ru>  Fri, 18 Sep 2026 11:48:57 +0000
 
 infra-node-metrics (1.0.0) stable; urgency=medium
 
   * Первый выпуск: настройка node-exporter, метрики сроков сертификатов.
 
- -- Infra Team <sysadmin@company.ru>  Sun, 13 Sep 2026 11:50:19 +0000
+ -- Infra Team <sysadmin@company.ru>  Wed, 16 Sep 2026 11:48:57 +0000

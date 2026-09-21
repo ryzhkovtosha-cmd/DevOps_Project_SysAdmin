@@ -4,12 +4,14 @@
 %:
 	dh $@
 
-# Юниты названы не по имени пакета (infra-cert-metrics, а не
-# infra-node-metrics), поэтому dh_installsystemd нужно указать имя явно —
-# иначе он ищет только debian/<пакет>.service и наши файлы не находит.
+# Юниты названы не по имени пакета (infra-cert-metrics), поэтому
+# dh_installsystemd нужно указать имя явно — иначе он ищет только
+# debian/<пакет>.service и наши файлы не находит.
 #
-# Включаем и запускаем ТОЛЬКО таймер: сама служба имеет тип oneshot,
-# запускается таймером и секции [Install] не имеет.
+# Два вызова с ЯВНЫМ указанием юнита в каждом. Без явного указания
+# первый вызов помечает --no-enable все юниты с этим именем, включая
+# таймер, и второй вызов этого уже не отменяет: таймер устанавливается,
+# но в автозапуск не попадает.
 override_dh_installsystemd:
-	dh_installsystemd --name=infra-cert-metrics --no-enable --no-start
+	dh_installsystemd --name=infra-cert-metrics --no-enable --no-start infra-cert-metrics.service
 	dh_installsystemd --name=infra-cert-metrics infra-cert-metrics.timer
