@@ -20,6 +20,28 @@ groups:
             Последнее успешное копирование более 26 часов назад.
             journalctl -u infra-backup.service -n 50
 
+      - alert: BackupNeverSucceeded
+        # Слепое пятно двух соседних алертов. BackupTooOld вычисляет
+        # time() - <метка успеха>, а если метки нет вовсе, результат пустой
+        # и алерт молчит. BackupFailed смотрит на код возврата, которого
+        # тоже нет, если скрипт упал до записи метрик. Так и произошло на
+        # практике: копирование падало 17 часов, мониторинг молчал.
+        # absent() срабатывает именно на ОТСУТСТВИЕ метрики.
+        expr: >-
+          absent(infra_backup_last_success_timestamp_seconds{backup_job="ca"})
+          or absent(infra_backup_last_success_timestamp_seconds{backup_job="vpn"})
+        # Первый запуск по расписанию — в 03:20, до суток после настройки.
+        for: 26h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Резервная копия {{ $labels.backup_job }} ни разу не создавалась"
+          description: >-
+            Метрика успешного копирования отсутствует более 26 часов.
+            Задача не запускается или падает раньше, чем успевает
+            записать метрики. Проверьте:
+            journalctl -u infra-backup -n 50
+
       - alert: BackupFailed
         expr: infra_backup_last_exit_code != 0
         for: 10m

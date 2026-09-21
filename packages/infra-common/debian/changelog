@@ -1,5 +1,15 @@
+infra-common (1.0.1) stable; urgency=medium
+
+  * В project.env путь к ключу строится через ${HOME:-/root}. У служб
+    systemd переменная HOME не задана, а скрипты работают в строгом
+    режиме set -u: обращение к ней вызывало аварийный выход, и
+    резервное копирование по расписанию не запускалось.
+  * Из библиотеки убрано глобальное переопределение IFS.
+
+ -- Infra Team <sysadmin@company.ru>  Mon, 21 Sep 2026 08:35:55 +0000
+
 infra-common (1.0.0) stable; urgency=medium
 
   * Первый выпуск: библиотека common.sh и файл параметров project.env.
 
- -- Infra Team <sysadmin@company.ru>  Tue, 15 Sep 2026 11:52:08 +0000
+ -- Infra Team <sysadmin@company.ru>  Wed, 16 Sep 2026 08:35:55 +0000

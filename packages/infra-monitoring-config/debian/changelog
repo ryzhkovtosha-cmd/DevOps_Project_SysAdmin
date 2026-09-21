@@ -1,3 +1,12 @@
+infra-monitoring-config (1.0.4) stable; urgency=medium
+
+  * Добавлен алерт BackupNeverSucceeded. BackupTooOld и BackupFailed
+    не замечали копирование, которое ни разу не отработало: оба
+    вычисляются по метрикам, которых в этом случае просто нет.
+    absent() срабатывает именно на их отсутствие.
+
+ -- Infra Team <sysadmin@company.ru>  Mon, 21 Sep 2026 08:35:55 +0000
+
 infra-monitoring-config (1.0.3) stable; urgency=medium
 
   * EnvironmentFile в drop-in помечен необязательным. Drop-in попадает
