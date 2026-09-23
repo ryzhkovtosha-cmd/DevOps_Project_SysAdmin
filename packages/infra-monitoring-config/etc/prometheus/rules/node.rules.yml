@@ -32,7 +32,17 @@ groups:
             выполнять работы, или машина упала по нехватке памяти.
 
       - alert: SystemdUnitFailed
-        expr: node_systemd_unit_state{state="failed"} == 1
+        # Исключены юниты, на падение которых нет осмысленного действия:
+        #   cloud-init, cloud-config, cloud-final — одноразовая первичная
+        #     настройка облачной ВМ. Свою работу делают на первой загрузке,
+        #     а при повторных запусках могут оставаться в failed без вреда;
+        #   fwupd-refresh — обновление прошивок, которых у ВМ нет.
+        # Фильтр живёт здесь, а не в параметрах node-exporter: флаг
+        # --collector.systemd.unit-include в версии 0.18 отсутствует, а
+        # выражение алерта от версии экспортёра не зависит.
+        expr: >-
+          node_systemd_unit_state{state="failed",
+            name!~"(cloud-init|cloud-init-local|cloud-config|cloud-final|fwupd-refresh)[.]service"} == 1
         for: 5m
         labels:
           severity: warning

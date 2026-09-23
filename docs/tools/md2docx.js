@@ -2,8 +2,7 @@
 // блоки кода, изображения. Таблицы — с шириной в DXA, иначе ломаются в Google Docs.
 //
 // Использование:
-//   node docs/tools/md2docx.js docs/user-guide.md  docs/user-guide.docx  "Руководство пользователя"
-//   node docs/tools/md2docx.js docs/admin-guide.md docs/admin-guide.docx "Руководство администратора"
+//   node docs/tools/md2docx.js docs/<документ>.md docs/<документ>.docx "<колонтитул>"
 // Зависимость: npm install docx
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +14,24 @@ const {
 
 const [, , IN, OUT, RUNNING_TITLE] = process.argv;
 const SRC_DIR = path.dirname(IN);
-const lines = fs.readFileSync(IN, 'utf8').split('\n');
+// Склеиваем строки, разорванные жёстким переносом: в markdown это один абзац
+// или один пункт списка. Иначе каждая строка стала бы отдельным абзацем.
+function normalize(src) {
+  const out = [];
+  let fence = false;
+  const startsBlock = l => /^(#{1,6} |\||```|!\[|---\s*$|\s*- |\d+\. )/.test(l);
+  const closed = l => /^(#{1,6} |\||!\[|---\s*$|```)/.test(l);
+  for (const l of src) {
+    if (l.startsWith('```')) { fence = !fence; out.push(l); continue; }
+    if (fence) { out.push(l); continue; }
+    const prev = out.length ? out[out.length - 1] : '';
+    if (l.trim() && prev.trim() && !closed(prev) && !startsBlock(l)) {
+      out[out.length - 1] = prev.replace(/\s+$/, '') + ' ' + l.trim();
+    } else out.push(l);
+  }
+  return out;
+}
+const lines = normalize(fs.readFileSync(IN, 'utf8').split('\n'));
 
 const FONT = 'Arial';
 const MONO = 'Courier New';
@@ -31,7 +47,7 @@ function inline(text, base = {}) {
     if (m.index > last) out.push(new TextRun({ text: text.slice(last, m.index), ...base }));
     const tok = m[0];
     if (tok.startsWith('**')) {
-      out.push(new TextRun({ text: tok.slice(2, -2), bold: true, ...base }));
+      out.push(...inline(tok.slice(2, -2), { ...base, bold: true }));
     } else if (tok.startsWith('`')) {
       out.push(new TextRun({ text: tok.slice(1, -1), font: MONO, size: 19, ...base }));
     } else {

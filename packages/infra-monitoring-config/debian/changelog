@@ -1,3 +1,14 @@
+infra-monitoring-config (1.0.5) stable; urgency=medium
+
+  * SystemdUnitFailed больше не срабатывает на одноразовые юниты
+    первичной настройки облачной ВМ (cloud-init, cloud-config,
+    cloud-final) и на fwupd-refresh. На практике алерт горел по пяти
+    таким юнитам на трёх машинах, и ни на один не было осмысленного
+    действия. Фильтр перенесён в выражение алерта: в node-exporter 0.18
+    нет флага --collector.systemd.unit-include.
+
+ -- Infra Team <sysadmin@company.ru>  Tue, 22 Sep 2026 07:17:27 +0000
+
 infra-monitoring-config (1.0.4) stable; urgency=medium
 
   * Добавлен алерт BackupNeverSucceeded. BackupTooOld и BackupFailed
